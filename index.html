@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Food Photo Picker</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0a0a0a;
+  color: #fff;
+  min-height: 100vh;
+}
+
+.header {
+  text-align: center;
+  padding: 40px 20px 20px;
+}
+
+.header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+
+.header h1 span {
+  background: linear-gradient(135deg, #ff6b35, #f7c948);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header p {
+  color: #888;
+  font-size: 14px;
+}
+
+.upload-area {
+  max-width: 600px;
+  margin: 30px auto;
+  padding: 0 20px;
+}
+
+.upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 20px;
+  border: 2px dashed #333;
+  border-radius: 16px;
+  background: #111;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.upload-btn:hover {
+  border-color: #ff6b35;
+  background: #1a1a1a;
+}
+
+.upload-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.upload-btn input {
+  display: none;
+}
+
+/* Status */
+.status {
+  text-align: center;
+  padding: 20px;
+  color: #888;
+  font-size: 14px;
+}
+
+.status .progress-bar {
+  max-width: 400px;
+  margin: 12px auto 0;
+  height: 4px;
+  background: #222;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.status .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff6b35, #f7c948);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* Stats */
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  padding: 10px 20px 20px;
+  font-size: 13px;
+  color: #666;
+}
+
+.stats span {
+  color: #ff6b35;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+/* Gallery */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  padding: 3px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+@media (min-width: 600px) {
+  .gallery {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 4px;
+  }
+}
+
+.gallery-item {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 4px;
+  cursor: pointer;
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.05);
+}
+
+.gallery-item .label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 6px 8px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  font-size: 11px;
+  color: rgba(255,255,255,0.9);
+  text-transform: capitalize;
+}
+
+.gallery-item .confidence {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  background: rgba(255,107,53,0.85);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.95);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.modal-overlay img {
+  max-width: 100%;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.modal-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 101;
+}
+
+.model-loading {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-size: 13px;
+}
+
+.model-loading .spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #333;
+  border-top-color: #ff6b35;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #555;
+}
+
+.empty-state .icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🍽 <span>Food Photo Picker</span></h1>
+  <p>写真の中から食べ物だけをAIが自動ピックアップ</p>
+</div>
+
+<div id="modelStatus" class="model-loading">
+  <span class="spinner"></span>AIモデルを読み込み中...
+</div>
+
+<div class="upload-area">
+  <label class="upload-btn" id="uploadBtn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+    </svg>
+    <span>写真を選択</span>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </label>
+</div>
+
+<div id="status" class="status" style="display:none">
+  <div id="statusText"></div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div id="stats" class="stats" style="display:none">
+  <div>全体 <span id="totalCount">0</span> 枚</div>
+  <div>食べ物 <span id="foodCount">0</span> 枚</div>
+</div>
+
+<div id="gallery" class="gallery"></div>
+
+<div id="emptyState" class="empty-state" style="display:none">
+  <div class="icon">🔍</div>
+  <p>食べ物の写真は見つかりませんでした</p>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <button class="modal-close" onclick="closeModal()">✕</button>
+  <img id="modalImg" src="" alt="">
+</div>
+
+<script>
+// Food-related ImageNet class names (MobileNet)
+const FOOD_KEYWORDS = [
+  'pizza', 'hamburger', 'cheeseburger', 'hotdog', 'hot dog',
+  'pretzel', 'bagel', 'french loaf', 'baguette',
+  'ice cream', 'ice lolly', 'lollipop',
+  'chocolate sauce', 'chocolate',
+  'espresso', 'coffee', 'cup',
+  'beer', 'wine', 'red wine', 'cocktail',
+  'plate', 'bowl', 'soup bowl',
+  'menu', 'restaurant',
+  'banana', 'orange', 'lemon', 'fig', 'pineapple', 'apple',
+  'strawberry', 'pomegranate', 'custard apple', 'jackfruit',
+  'mashed potato', 'french fries', 'fries',
+  'burrito', 'taco', 'guacamole',
+  'meat loaf', 'meatloaf', 'steak',
+  'carbonara', 'spaghetti',
+  'dough', 'bread', 'toast',
+  'trifle', 'cake', 'cupcake',
+  'waffle', 'pancake', 'crepe',
+  'grocery store', 'grocery',
+  'bakery', 'confectionery',
+  'dining table', 'dinner table',
+  'pot pie', 'potpie',
+  'consomme', 'soup',
+  'cucumber', 'zucchini', 'broccoli', 'cauliflower',
+  'bell pepper', 'mushroom', 'artichoke', 'corn',
+  'head cabbage', 'cabbage', 'lettuce', 'spinach',
+  'acorn squash', 'butternut squash', 'spaghetti squash',
+  'eggnog', 'milk', 'smoothie',
+  'guacamole', 'salsa', 'sauce',
+  'meat', 'pork', 'chicken', 'turkey',
+  'sushi', 'ramen', 'noodle',
+  'donut', 'doughnut', 'cookie', 'biscuit',
+  'sandwich', 'sub', 'wrap',
+  'salad', 'coleslaw',
+  'cheese', 'cheddar',
+  'egg', 'omelet', 'omelette',
+  'rice', 'fried rice', 'pilaf',
+  'dumpling', 'gyoza', 'dim sum',
+  'candy', 'gummy', 'jelly bean',
+  'popcorn', 'pretzel', 'cracker',
+  'wok', 'frying pan', 'spatula', 'ladle',
+  'crock pot', 'slow cooker',
+  'mixing bowl',
+  'water bottle', 'bottle',
+  'wine bottle', 'beer bottle', 'beer glass', 'goblet',
+  'teapot', 'coffeepot',
+  'food', 'meal', 'dish', 'cuisine',
+  'pop bottle', 'soda bottle',
+  'wooden spoon',
+  'measuring cup',
+  'picket fence',
+];
+
+let model = null;
+let foodPhotos = [];
+let totalProcessed = 0;
+
+// Load model
+async function loadModel() {
+  try {
+    model = await mobilenet.load({ version: 2, alpha: 1.0 });
+    document.getElementById('modelStatus').innerHTML = '✅ AIモデル準備完了';
+    setTimeout(() => {
+      document.getElementById('modelStatus').style.display = 'none';
+    }, 1500);
+  } catch (e) {
+    document.getElementById('modelStatus').innerHTML = '❌ モデルの読み込みに失敗しました。ページをリロードしてください。';
+    console.error(e);
+  }
+}
+
+loadModel();
+
+// Check if prediction is food-related
+function isFoodRelated(predictions) {
+  for (const pred of predictions) {
+    const className = pred.className.toLowerCase();
+    for (const keyword of FOOD_KEYWORDS) {
+      if (className.includes(keyword)) {
+        return { isFood: true, label: pred.className, confidence: pred.probability };
+      }
+    }
+  }
+  return { isFood: false };
+}
+
+// Process single image
+function classifyImage(imgElement) {
+  return new Promise(async (resolve) => {
+    try {
+      const predictions = await model.classify(imgElement, 5);
+      const result = isFoodRelated(predictions);
+      resolve(result);
+    } catch (e) {
+      console.error('Classification error:', e);
+      resolve({ isFood: false });
+    }
+  });
+}
+
+// File input handler
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  if (!model) {
+    alert('AIモデルがまだ読み込まれていません。少々お待ちください。');
+    return;
+  }
+
+  // Reset
+  foodPhotos = [];
+  totalProcessed = 0;
+  document.getElementById('gallery').innerHTML = '';
+  document.getElementById('emptyState').style.display = 'none';
+
+  const statusEl = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+  const progressFill = document.getElementById('progressFill');
+  const statsEl = document.getElementById('stats');
+
+  statusEl.style.display = 'block';
+  statsEl.style.display = 'flex';
+
+  const total = files.length;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    statusText.textContent = `解析中... ${i + 1} / ${total}`;
+    progressFill.style.width = `${((i + 1) / total) * 100}%`;
+
+    try {
+      const imgSrc = await readFileAsDataURL(file);
+      const img = await loadImage(imgSrc);
+      const result = await classifyImage(img);
+
+      totalProcessed++;
+      document.getElementById('totalCount').textContent = totalProcessed;
+
+      if (result.isFood) {
+        foodPhotos.push({
+          src: imgSrc,
+          label: result.label,
+          confidence: result.confidence,
+          fileName: file.name
+        });
+        document.getElementById('foodCount').textContent = foodPhotos.length;
+        addToGallery(foodPhotos[foodPhotos.length - 1]);
+      }
+    } catch (err) {
+      console.error('Error processing file:', file.name, err);
+      totalProcessed++;
+    }
+  }
+
+  statusText.textContent = `完了！ ${total} 枚中 ${foodPhotos.length} 枚の食べ物写真を検出`;
+
+  if (foodPhotos.length === 0) {
+    document.getElementById('emptyState').style.display = 'block';
+  }
+
+  // Reset file input
+  e.target.value = '';
+});
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function addToGallery(photo) {
+  const gallery = document.getElementById('gallery');
+  const item = document.createElement('div');
+  item.className = 'gallery-item';
+  item.innerHTML = `
+    <img src="${photo.src}" alt="${photo.label}" loading="lazy">
+    <div class="confidence">${Math.round(photo.confidence * 100)}%</div>
+    <div class="label">${photo.label}</div>
+  `;
+  item.addEventListener('click', () => openModal(photo.src));
+  gallery.appendChild(item);
+}
+
+function openModal(src) {
+  document.getElementById('modalImg').src = src;
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('active');
+}
+
+document.getElementById('modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+
+</body>
+</html>
